@@ -21,7 +21,13 @@ PASSWORD = 'your_esxi_password'
 NETBOX_URL = 'your_netbox_url'
 netbox = pynetbox.api(url=NETBOX_URL, token=myToken)
 
+//add
+from vmware.vapi.security.session import create_session_security_context
+from vmware.vapi.security.user_password import create_user_password_security_context
+from vmware.vapi.stdlib.client.factories import StubConfigurationFactory
+from vmware.vapi.lib.connect import get_requests_connector
 
+//rest
 def get_vsphere_client(server, username, password, disable_ssl_verification=True):
     if disable_ssl_verification:
         # Disable SSL certificate verification
