@@ -18,6 +18,17 @@ from vmware.vapi.lib.connect import get_requests_connector
 from vmware.vapi.security.session import create_session_security_context
 from vmware.vapi.stdlib.client.factories import StubConfigurationFactory
 
+# static
+NETBOX_VM_API = 
+NETBOX_CLUSTER_API = 
+NETBOX_INTERFACES_API = 
+myToken = 
+ESXI_IP = 
+USERNAME = 
+PASSWORD = 
+NETBOX_URL = 
+netbox = 
+
 
 # get cluster information from the vsphere
 def get_cluster_id_vsphere():
@@ -37,15 +48,12 @@ def get_cluster_id_vsphere():
 # get vm information from netbox, each object tag in the list contain name,cluster,role,tags
 def get_vm_obj_netbox():
     vms_list = []
-    vm_obj = {}
     vms = netbox.virtualization.virtual_machines.filter(cluster_id=get_cluster_id_vsphere())
     # tags = netbox.extras.tags.get(name=)
     for vm in vms:
-        vm_obj["name"] = vm.name
-        vm_obj["cluster"] = vm.cluster
-        vm_obj["role"] = vm.role
-        vm_obj["tags"] = vm.tags
-        vms_list.append(vm_obj)
+        vm_obj = {
+            "name":
+        }
     return vms_list
 
 
@@ -62,6 +70,19 @@ def get_or_create_cluster(client, datacenter, cluster_name):
         print(f"Not found cluster creating {cluster} >>>>")
         return cluster
 
+def get_tag_category(tag_name, tag_description):
+    keyword_to_category = {
+        'Application': 'Application Group',
+        'environment': 'Environment',
+    }
+    found = False
+    for keyword, category in keyword_to_category.items():
+        if keyword in tag_description:
+            found = True
+            return category
+
+    if not found:
+        return 'Server Type'
 
 # create vm using api
 def create_vm_vsphere(vcenter_server, username, password, vm_name, memoryGB, numCPUs, datacenter_name, cluster_name,
@@ -118,15 +139,18 @@ def create_vm_vsphere(vcenter_server, username, password, vm_name, memoryGB, num
     tag_assoc_svc = stub_factory.create_stub(TagAssociation)
 
     # Create or get the tag category
-    category_id = None
-    for category in category_svc.list():
-        if category_svc.get(category).name == category_name:
-            category_id = category
-            break
-    if not category_id:
-        category_spec = CategoryModel(name=category_name, description='Category for ' + vm_name,
-                                      cardinality=CategoryModel.Cardinality.SINGLE)
-        category_id = category_svc.create(category_spec)
+    for tag in vm['tags']:
+        category_name = get_tag_category(tag.name, tag.description)
+
+        category_id = None
+        for category in category_svc.list():
+            if category_svc.get(category).name == category_name:
+                category_id = category
+                break
+        if not category_id:
+            category_spec = CategoryModel(name=category_name, description='Category for ' + vm_name,
+                                          cardinality=CategoryModel.Cardinality.SINGLE)
+            category_id = category_svc.create(category_spec)
 
     # Create or get the tag
     tag_id = None
@@ -144,7 +168,10 @@ def create_vm_vsphere(vcenter_server, username, password, vm_name, memoryGB, num
 
 
 def main():
-    pass
+    client = create_vsphere_client()
+    client = create_vsphere_client(server=ESXI_IP, username=USERNAME, password=PASSWORD)
+    
+
 
 
 if __name__ == "__main__":
