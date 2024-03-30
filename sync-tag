@@ -1,0 +1,151 @@
+from pyVim.connect import SmartConnect, Disconnect
+from pyVmomi import vim, vmodl
+import ssl
+from pyVim.task import WaitForTask
+import os
+import requests
+import pandas as pd
+import numpy as np
+import pynetbox
+
+# vsphere python automation library
+from com.vmware.vcenter_client import VM
+from com.vmware.vcenter.vm.hardware_client import (Cpu, Memory, Ethernet, Cdrom, Disk)
+from com.vmware.cis.tagging_client import (Category, CategoryModel, Tag, TagAssociation, TagModel)
+from vmware.vapi.vsphere.client import create_vsphere_client
+from vmware.vapi.bindings.stub import StubFactory, StubConfiguration
+from vmware.vapi.lib.connect import get_requests_connector
+from vmware.vapi.security.session import create_session_security_context
+from vmware.vapi.stdlib.client.factories import StubConfigurationFactory
+
+
+# get cluster information from the vsphere
+def get_cluster_id_vsphere():
+    context = ssl._create_unverified_context()
+    si = SmartConnect(host=ESXI_IP, user=USERNAME, pwd=PASSWORD, sslContext=context)
+    content = si.RetrieveContent()
+    for datacenter in content.rootFolder.childEntity:
+        for cluster in datacenter.hostFolder.childEntity:
+            cluster_name = cluster.name
+            # print(cluster.name)
+
+    cluster = netbox.virtualization.clusters.get(name=cluster_name)
+    if cluster:
+        return cluster.id
+
+
+# get vm information from netbox, each object tag in the list contain name,cluster,role,tags
+def get_vm_obj_netbox():
+    vms_list = []
+    vm_obj = {}
+    vms = netbox.virtualization.virtual_machines.filter(cluster_id=get_cluster_id_vsphere())
+    # tags = netbox.extras.tags.get(name=)
+    for vm in vms:
+        vm_obj["name"] = vm.name
+        vm_obj["cluster"] = vm.cluster
+        vm_obj["role"] = vm.role
+        vm_obj["tags"] = vm.tags
+        vms_list.append(vm_obj)
+    return vms_list
+
+
+def get_or_create_cluster(client, datacenter, cluster_name):
+    clusters = client.vcenter.Cluster.list(
+        VM.Cluster.FilterSpec(name=set([cluster_name]), datacenters=set([datacenter])))
+    if clusters:
+        return clusters[0].cluster
+    else:
+        # create
+        cluster_spec = VM.Cluster.CreateSpec(name=cluster_name, folder=client.vcenter.Folder.get(
+            client.vcenter.VM.get(datacenter=datacenter).home))
+        cluster = client.vcenter.Cluster.create(cluster_spec)
+        print(f"Not found cluster creating {cluster} >>>>")
+        return cluster
+
+
+# create vm using api
+def create_vm_vsphere(vcenter_server, username, password, vm_name, memoryGB, numCPUs, datacenter_name, cluster_name,
+                      datastore_name, disk_size_gb, network_name, tag_name, category_name, os_name):
+    client = create_vsphere_client(server=vcenter_server, username=username, password=password)
+
+    # Find the datacenter, datastore, cluster, and network
+    datacenter = client.vcenter.Datacenter.list(VM.Datacenter.FilterSpec(names=set([datacenter_name])))[0].datacenter
+    datastore = \
+    client.vcenter.Datastore.list(VM.Datastore.FilterSpec(names=set([datastore_name]), datacenters=set([datacenter])))[
+        0].datastore
+    cluster = \
+    client.vcenter.Cluster.list(VM.Cluster.FilterSpec(names=set([cluster_name]), datacenters=set([datacenter])))[
+        0].cluster
+    network = \
+    client.vcenter.Network.list(VM.Network.FilterSpec(names=set([network_name]), datacenters=set([datacenter])))[
+        0].network
+
+    # check if datastore has enough free space
+    datastore_info = client.vcenter.Datastore.get(datastore)
+    free_space_gb = datastore_info.free_space / (1024 ** 3)
+    if disk_size_gb > free_space_gb:
+        print("Don't have enough disk space in vsphere")
+        return False
+
+    # Create the VM
+    vm_create_spec = VM.CreateSpec(
+        name=vm_name,
+        guest_os=os_name,
+        placement=VM.PlacementSpec(folder=client.vcenter.Folder.get(client.vcenter.VM.get(datacenter=datacenter).home),
+                                   cluster=cluster, datastore=datastore),
+        hardware=VM.HardwareSpec(
+            cpu=VM.CpuSpec(count=numCPUs),
+            memory=VM.MemorySpec(size_mb=memoryGB * 1024),
+            nics=[Ethernet.CreateSpec(type=Ethernet.BackingType.STANDARD_PORTGROUP, network=network)],
+            disks=[Disk.CreateSpec(type=Disk.HostBusAdapterType.SCSI,
+                                   backing=Disk.BackingSpec(type=Disk.BackingType.VMDK_FILE,
+                                                            vmdk_file=vm_name + '.vmdk', datastore=datastore),
+                                   new_vmdk=Disk.VmdkCreateSpec(capacity=disk_size_gb * 1024))],
+            cdroms=[Cdrom.CreateSpec(type=Cdrom.BackingType.ISO_FILE, iso_file='')]
+        )
+    )
+
+    vm = client.vcenter.VM.create(vm_create_spec)
+    print(f"VM '{vm_name}' created with ID: {vm}")
+
+    # Connect to the REST API for tagging
+    session = client._session_id
+    connector = get_requests_connector(session_id=session, url=f'https://{vcenter_server}/api')
+    stub_config = StubConfigurationFactory.new_std_configuration(connector)
+    stub_factory = StubFactory(stub_config)
+    category_svc = stub_factory.create_stub(Category)
+    tag_svc = stub_factory.create_stub(Tag)
+    tag_assoc_svc = stub_factory.create_stub(TagAssociation)
+
+    # Create or get the tag category
+    category_id = None
+    for category in category_svc.list():
+        if category_svc.get(category).name == category_name:
+            category_id = category
+            break
+    if not category_id:
+        category_spec = CategoryModel(name=category_name, description='Category for ' + vm_name,
+                                      cardinality=CategoryModel.Cardinality.SINGLE)
+        category_id = category_svc.create(category_spec)
+
+    # Create or get the tag
+    tag_id = None
+    for tag in tag_svc.list():
+        if tag_svc.get(tag).name == tag_name:
+            tag_id = tag
+            break
+    if not tag_id:
+        tag_spec = TagModel(name=tag_name, description='Tag for ' + vm_name, category_id=category_id)
+        tag_id = tag_svc.create(tag_spec)
+
+    # Attach the tag to the VM
+    tag_assoc_svc.attach(tag_id=tag_id, object_id={'id': vm, 'type': 'VirtualMachine'})
+    print(f"Tag '{tag_name}' with category '{category_name}' added to VM {vm_name}")
+
+
+def main():
+    pass
+
+
+if __name__ == "__main__":
+    main()
