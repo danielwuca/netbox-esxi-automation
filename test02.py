@@ -21,6 +21,20 @@ PASSWORD = 'your_esxi_password'
 NETBOX_URL = 'your_netbox_url'
 netbox = pynetbox.api(url=NETBOX_URL, token=myToken)
 
+
+def get_vsphere_client(server, username, password, disable_ssl_verification=True):
+    if disable_ssl_verification:
+        # Disable SSL certificate verification
+        session_security_context = create_session_security_context(username, password)
+        stub_config = StubConfigurationFactory.new_std_configuration(get_requests_connector(session_security_context, server, verify_ssl=False))
+    else:
+        # Keep SSL certificate verification
+        security_context = create_user_password_security_context(username, password)
+        stub_config = StubConfigurationFactory.new_std_configuration(server, security_context)
+
+    return create_vsphere_client(stub_config)
+
+
 # Get cluster information from vSphere
 def get_cluster_id_vsphere():
     context = ssl._create_unverified_context()
