@@ -28,7 +28,14 @@ from vmware.vapi.stdlib.client.factories import StubConfigurationFactory
 from vmware.vapi.lib.connect import get_requests_connector
 
 # static
-
+NETBOX_VM_API = os.getenv('NETBOX_VM_API')
+NETBOX_CLUSTER_API = os.getenv('NETBOX_CLUSTER_API')
+NETBOX_INTERFACES_API = os.getenv('NETBOX_INTERFACES_API')
+Netbox_Token = os.getenv('Netbox_Token')
+ESXI_IP = os.getenv('ESXI_IP')
+USERNAME_ESXI = os.getenv('USERNAME_ESXI')
+PASSWORD = os.getenv('PASSWORD')
+NETBOX_URL = os.getenv('NETBOX_URL')
 netbox = pynetbox.api(NETBOX_URL, token=myToken)
 
 session = requests.session()
