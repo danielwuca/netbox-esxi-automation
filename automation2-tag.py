@@ -28,14 +28,7 @@ from vmware.vapi.stdlib.client.factories import StubConfigurationFactory
 from vmware.vapi.lib.connect import get_requests_connector
 
 # static
-NETBOX_VM_API = 'http://142.107.6.132:8083/api/virtualization/virtual-machines/?limit=0'
-NETBOX_CLUSTER_API = 'http://142.107.6.132:8083/api/virtualization/clusters'
-NETBOX_INTERFACES_API = 'http://142.107.6.132:8083/api/dcim/interfaces'
-myToken = '953e67e5ef542cd76f1895beca8be696e454f090'
-ESXI_IP = '142.107.6.177'
-USERNAME = 'student@vsphere.local'
-PASSWORD = 'Password!123'
-NETBOX_URL = 'http://142.107.6.132:8083/'
+
 netbox = pynetbox.api(NETBOX_URL, token=myToken)
 
 session = requests.session()
