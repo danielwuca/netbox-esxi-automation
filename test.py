@@ -5,6 +5,7 @@ import requests
 import urllib3
 import pynetbox
 
+# pip install --upgrade git+https://github.com/vmware/vsphere-automation-sdk-python.git
 # Disable SSL warnings (not recommended for production)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
