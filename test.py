@@ -93,3 +93,64 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# version 2
+def sync_tags_to_vsphere(category_mapping):
+    netbox_tags = list(netbox.extras.tags.all())  # Tags from NetBox
+    netbox_vm_roles = list(netbox.dcim.device_roles.all())  # Roles from NetBox, definitely roles
+    category_ids = client.tagging.Category.list()
+    tags_ids = client.tagging.Tag.list()
+    vsphere_categories = {client.tagging.Category.get(category_id).name: category_id for category_id in category_ids}
+    vsphere_tags = {client.tagging.Tag.get(tag_id).name: tag_id for tag_id in tags_ids}
+
+    # Combine tags and roles but maintain awareness of their origin
+    combine_items = [{'item': item, 'type': 'tag'} for item in netbox_tags] + \
+                    [{'item': role, 'type': 'role'} for role in netbox_vm_roles]
+
+    for entry in combine_items:
+        netbox_item = entry['item']
+        tag_name = netbox_item['name']
+        tag_description = netbox_item.get('description', netbox_item['name'])
+        item_type = entry['type']
+        category_matched = False
+
+        for keyword, category_name in category_mapping.items():
+            if keyword in tag_description.lower():
+                vsphere_category_name = category_name
+                category_matched = True
+                break
+
+        if not category_matched and item_type == 'role':
+            vsphere_category_name = 'Server Type'  # Default category for roles without specific keywords
+
+        if not category_matched and item_type == 'tag':
+            continue  # Skip tags without keyword matches
+
+        category_id = vsphere_categories[vsphere_category_name]
+        
+        if tag_name not in vsphere_tags:
+            tag_spec = client.tagging.Tag.CreateSpec()
+            tag_spec.name = tag_name
+            tag_spec.description = tag_description
+            tag_spec.category_id = category_id
+            client.tagging.Tag.create(tag_spec)
+        else:
+            tag_id = vsphere_tags[tag_name]
+            update_spec = client.tagging.Tag.UpdateSpec()
+            update_spec.description = tag_description
+            update_spec.category_id = category_id
+            client.tagging.Tag.update(tag_id, update_spec)
+
+def main():
+    category_mapping = {
+        'environment': 'Environment',
+        'application': 'Application Group'
+    }
+
+    sync_tags_to_vsphere(category_mapping)
+    assign_tags_to_vms()
+
+if __name__ == "__main__":
+    main()
+
