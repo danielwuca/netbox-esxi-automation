@@ -154,3 +154,49 @@ def main():
 if __name__ == "__main__":
     main()
 
+
+# version 3
+def sync_tags_to_vsphere(category_mapping):
+    ...
+    keyword_matched_tags = set()  # To track tags created based on keywords
+    
+    for entry in combine_items:
+        ...
+        if category_matched:
+            if tag_name not in vsphere_tags:
+                ...
+                client.tagging.Tag.create(tag_spec)
+            else:
+                ...
+                client.tagging.Tag.update(tag_id, update_spec)
+            keyword_matched_tags.add(tag_name)  # Track this tag as keyword matched
+    
+    return keyword_matched_tags  # Return the set of keyword-matched tags
+
+def assign_tags_to_vms(keyword_matched_tags):
+    ...
+    for netbox_vm in netbox_vms:
+        vsphere_vm_id = vsphere_vms.get(netbox_vm.name)
+        if vsphere_vm_id:
+            netbox_vm_tags = [tag.name for tag in netbox_vm.tags if tag.name in keyword_matched_tags]
+            if hasattr(netbox_vm, 'role') and netbox_vm.role and netbox_vm.role.name in keyword_matched_tags:
+                netbox_vm_tags.append(netbox_vm.role.name)
+            
+            for tag_name in netbox_vm_tags:
+                if tag_name in vsphere_tags:
+                    tag_id = vsphere_tags[tag_name]
+                    client.tagging.TagAssociation.attach(tag_id=tag_id, object_id={'id': vsphere_vm_id, 'type': 'VirtualMachine'})
+                    print(f"assign tag {tag_name} to VM {netbox_vm.name}")
+        else:
+            print(f"vm {netbox_vm.name} not found in vsphere")
+
+def main():
+    category_mapping = {
+        'environment': 'Environment',
+        'application': 'Application Group'
+    }
+    keyword_matched_tags = sync_tags_to_vsphere(category_mapping)
+    assign_tags_to_vms(keyword_matched_tags)
+
+if __name__ == "__main__":
+    main()
